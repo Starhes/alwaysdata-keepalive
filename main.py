@@ -54,14 +54,29 @@ class Telegram:
 
 
 def mask_email(email):
-    """脱敏邮箱"""
+    """脱敏邮箱 (包括域名)"""
     if not email or "@" not in email:
         return email
     try:
         user, domain = email.split("@")
+        
+        # 脱敏用户名
         if len(user) <= 2:
-            return f"{user[0]}***@{domain}"
-        return f"{user[0]}***{user[-1]}@{domain}"
+            masked_user = f"{user[0]}***"
+        else:
+            masked_user = f"{user[0]}***{user[-1]}"
+            
+        # 脱敏域名
+        if "." in domain:
+            name, tld = domain.rsplit(".", 1)
+            if len(name) <= 2:
+                masked_domain = f"{name[0]}***.{tld}"
+            else:
+                masked_domain = f"{name[0]}***{name[-1]}.{tld}"
+        else:
+            masked_domain = domain
+            
+        return f"{masked_user}@{masked_domain}"
     except:
         return email
 
