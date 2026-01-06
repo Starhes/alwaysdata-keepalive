@@ -32,6 +32,7 @@ jobs:
       env:
         AD_USERNAME: ${{ secrets.AD_USERNAME }}
         AD_PASSWORD: ${{ secrets.AD_PASSWORD }}
+        ACCOUNTS_JSON: ${{ secrets.ACCOUNTS_JSON }}
         TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
       run: |

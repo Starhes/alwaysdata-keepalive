@@ -19,10 +19,30 @@
 
 | Secret 名称 | 必须 | 描述 |
 | --- | --- | --- |
-| `AD_USERNAME` | ✅ | AlwaysData 的登录邮箱 |
-| `AD_PASSWORD` | ✅ | AlwaysData 的登录密码 |
+| `AD_USERNAME` | ❌ | (单账户) AlwaysData 的登录邮箱 |
+| `AD_PASSWORD` | ❌ | (单账户) AlwaysData 的登录密码 |
+| `ACCOUNTS_JSON` | ❌ | (多账户) JSON 格式的账户列表，见下文 |
 | `TG_BOT_TOKEN` | ❌ | (可选) Telegram Bot Token |
 | `TG_CHAT_ID` | ❌ | (可选) 接收通知的 Telegram Chat ID |
+
+### 多账户配置 (推荐)
+
+如果您有多个账号，请使用 `ACCOUNTS_JSON` secret，格式如下：
+
+```json
+[
+  {
+    "username": "user1@example.com",
+    "password": "password1"
+  },
+  {
+    "username": "user2@example.com",
+    "password": "password"
+  }
+]
+```
+
+**注意**: 如果配置了 `ACCOUNTS_JSON`，脚本也会尝试读取 `AD_USERNAME` 和 `AD_PASSWORD` 并合并（去重）。
 
 ### 3. 运行
 

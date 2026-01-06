@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 AlwaysData 自动登录脚本
+- 支持多账户 (ACCOUNTS_JSON)
 - 邮箱密码登录
 - Telegram 通知
 """
@@ -8,6 +9,7 @@ AlwaysData 自动登录脚本
 import os
 import sys
 import time
+import json
 import requests
 from playwright.sync_api import sync_playwright
 
@@ -54,9 +56,10 @@ class Telegram:
 class AutoLogin:
     """自动登录"""
     
-    def __init__(self):
-        self.username = os.environ.get('AD_USERNAME')
-        self.password = os.environ.get('AD_PASSWORD')
+    def __init__(self, username, password, index=0):
+        self.username = username
+        self.password = password
+        self.index = index
         self.tg = Telegram()
         self.shots = []
         self.logs = []
@@ -64,13 +67,14 @@ class AutoLogin:
         
     def log(self, msg, level="INFO"):
         icons = {"INFO": "ℹ️", "SUCCESS": "✅", "ERROR": "❌", "WARN": "⚠️", "STEP": "🔹"}
-        line = f"{icons.get(level, '•')} {msg}"
+        prefix = f"[{self.username}]"
+        line = f"{icons.get(level, '•')} {prefix} {msg}"
         print(line)
         self.logs.append(line)
     
     def shot(self, page, name):
         self.n += 1
-        f = f"{self.n:02d}_{name}.png"
+        f = f"{self.index}_{self.n:02d}_{name}.png"
         try:
             page.screenshot(path=f)
             self.shots.append(f)
@@ -81,7 +85,6 @@ class AutoLogin:
     def keepalive(self, page):
         """保活"""
         self.log("保活...", "STEP")
-        # 登录后默认就在管理界面，可以刷新一下或者访问特定页面
         try:
             page.reload(timeout=30000)
             page.wait_for_load_state('networkidle', timeout=15000)
@@ -116,17 +119,12 @@ class AutoLogin:
                 self.tg.photo(self.shots[-1], "完成")
     
     def run(self):
-        print("\n" + "="*50)
-        print("🚀 AlwaysData 自动登录")
-        print("="*50 + "\n")
-        
-        self.log(f"用户名: {self.username}")
-        self.log(f"密码: {'有' if self.password else '无'}")
+        self.log("开始处理...")
         
         if not self.username or not self.password:
             self.log("缺少凭据", "ERROR")
             self.notify(False, "凭据未配置")
-            sys.exit(1)
+            return False
         
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, args=['--no-sandbox'])
@@ -144,23 +142,19 @@ class AutoLogin:
                 time.sleep(2)
                 self.shot(page, "login_page")
                 
-                # 检查是否已经登录（虽然不太可能，因为没有持久化cookie）
+                # 检查是否已经登录
                 if 'login' not in page.url:
                     self.log("已登录！", "SUCCESS")
                     self.keepalive(page)
                     self.notify(True)
-                    print("\n✅ 成功！\n")
-                    return
+                    return True
 
                 # 2. 输入账号密码
                 self.log("步骤2: 输入凭据", "STEP")
                 try:
-                    # AlwaysData 登录页面的输入框 name 属性通常是 email (Courriel)
-                    # 尝试多种选择器以提高兼容性
                     username_selectors = ['input[name="email"]', 'input[name="username"]', 'input[type="email"]', '#id_email']
                     password_selectors = ['input[name="password"]', 'input[type="password"]', '#id_password']
                     
-                    # 查找用户名输入框
                     user_input = None
                     for sel in username_selectors:
                         if page.locator(sel).is_visible():
@@ -171,10 +165,8 @@ class AutoLogin:
                         self.log("未找到明显的用户名输入框，尝试默认 input[name='email']", "WARN")
                         user_input = 'input[name="email"]'
 
-                    self.log(f"使用用户名选择器: {user_input}")
                     page.fill(user_input, self.username)
                     
-                    # 查找密码输入框
                     pass_input = None
                     for sel in password_selectors:
                         if page.locator(sel).is_visible():
@@ -184,25 +176,21 @@ class AutoLogin:
                     if not pass_input:
                         pass_input = 'input[name="password"]'
                         
-                    self.log(f"使用密码选择器: {pass_input}")
                     page.fill(pass_input, self.password)
-                    
                     self.log("已输入凭据")
                 except Exception as e:
                     self.log(f"输入失败: {e}", "ERROR")
                     self.notify(False, f"输入失败: {e}")
-                    sys.exit(1)
+                    return False
                 
                 self.shot(page, "filled")
 
                 # 3. 提交登录
                 self.log("步骤3: 提交登录", "STEP")
                 try:
-                    # 尝试点击登录按钮，通常是 type="submit"
                     page.click('button[type="submit"], input[type="submit"]')
                 except Exception as e:
                     self.log(f"点击登录失败: {e}", "ERROR")
-                    # 尝试回车
                     page.keyboard.press('Enter')
                 
                 # 等待跳转
@@ -213,7 +201,6 @@ class AutoLogin:
                     self.log("登录超时或失败", "ERROR")
                     self.shot(page, "login_fail")
                     
-                    # 检查是否有错误提示
                     try:
                         err = page.locator('.alert-danger, .error').first
                         if err.is_visible():
@@ -222,7 +209,7 @@ class AutoLogin:
                         pass
                         
                     self.notify(False, "登录超时或失败")
-                    sys.exit(1)
+                    return False
 
                 self.shot(page, "login_success")
                 
@@ -231,7 +218,7 @@ class AutoLogin:
                 if 'login' in page.url:
                      self.log("仍在登录页，可能失败", "ERROR")
                      self.notify(False, "登录失败")
-                     sys.exit(1)
+                     return False
                 
                 self.log("登录成功！", "SUCCESS")
 
@@ -239,9 +226,7 @@ class AutoLogin:
                 self.keepalive(page)
                 
                 self.notify(True)
-                print("\n" + "="*50)
-                print("✅ 成功！")
-                print("="*50 + "\n")
+                return True
                 
             except Exception as e:
                 self.log(f"异常: {e}", "ERROR")
@@ -249,10 +234,69 @@ class AutoLogin:
                 import traceback
                 traceback.print_exc()
                 self.notify(False, str(e))
-                sys.exit(1)
+                return False
             finally:
                 browser.close()
 
 
+def get_accounts():
+    """获取所有需要登录的账户"""
+    accounts = []
+    
+    # 1. 尝试从 ACCOUNTS_JSON 获取
+    accounts_json = os.environ.get('ACCOUNTS_JSON')
+    if accounts_json:
+        try:
+            data = json.loads(accounts_json)
+            if isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict) and 'username' in item and 'password' in item:
+                        accounts.append(item)
+            elif isinstance(data, dict):
+                 if 'username' in data and 'password' in data:
+                        accounts.append(data)
+        except json.JSONDecodeError:
+            print("❌ ACCOUNTS_JSON 格式错误，忽略")
+    
+    # 2. 尝试从 AD_USERNAME / AD_PASSWORD 获取 (向后兼容)
+    u = os.environ.get('AD_USERNAME')
+    p = os.environ.get('AD_PASSWORD')
+    if u and p:
+        # 避免重复
+        if not any(a['username'] == u for a in accounts):
+            accounts.append({'username': u, 'password': p})
+            
+    return accounts
+
+
 if __name__ == "__main__":
-    AutoLogin().run()
+    print("\n" + "="*50)
+    print("🚀 AlwaysData 自动登录 (多账户版)")
+    print("="*50 + "\n")
+    
+    accounts = get_accounts()
+    
+    if not accounts:
+        print("❌ 未找到有效账户配置")
+        print("请配置 ACCOUNTS_JSON (JSON数组) 或 AD_USERNAME/AD_PASSWORD")
+        sys.exit(1)
+        
+    print(f"📋 共找到 {len(accounts)} 个账户")
+    
+    success_count = 0
+    fail_count = 0
+    
+    for i, acc in enumerate(accounts):
+        print(f"\n▶️ 开始处理第 {i+1} 个账户: {acc['username']}")
+        bot = AutoLogin(acc['username'], acc['password'], index=i+1)
+        if bot.run():
+            success_count += 1
+        else:
+            fail_count += 1
+            
+    print("\n" + "="*50)
+    print(f"🏁 运行结束 - 成功: {success_count} | 失败: {fail_count}")
+    print("="*50 + "\n")
+    
+    if fail_count > 0:
+        sys.exit(1)
