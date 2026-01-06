@@ -53,12 +53,26 @@ class Telegram:
             pass
 
 
+def mask_email(email):
+    """脱敏邮箱"""
+    if not email or "@" not in email:
+        return email
+    try:
+        user, domain = email.split("@")
+        if len(user) <= 2:
+            return f"{user[0]}***@{domain}"
+        return f"{user[0]}***{user[-1]}@{domain}"
+    except:
+        return email
+
+
 class AutoLogin:
     """自动登录"""
     
     def __init__(self, username, password, index=0):
         self.username = username
         self.password = password
+        self.masked_username = mask_email(username)
         self.index = index
         self.tg = Telegram()
         self.shots = []
@@ -67,7 +81,7 @@ class AutoLogin:
         
     def log(self, msg, level="INFO"):
         icons = {"INFO": "ℹ️", "SUCCESS": "✅", "ERROR": "❌", "WARN": "⚠️", "STEP": "🔹"}
-        prefix = f"[{self.username}]"
+        prefix = f"[{self.masked_username}]"
         line = f"{icons.get(level, '•')} {prefix} {msg}"
         print(line)
         self.logs.append(line)
@@ -101,7 +115,7 @@ class AutoLogin:
         msg = f"""<b>🤖 AlwaysData 自动登录</b>
 
 <b>状态:</b> {"✅ 成功" if ok else "❌ 失败"}
-<b>用户:</b> {self.username}
+<b>用户:</b> {self.masked_username}
 <b>时间:</b> {time.strftime('%Y-%m-%d %H:%M:%S')}"""
         
         if err:
@@ -287,7 +301,8 @@ if __name__ == "__main__":
     fail_count = 0
     
     for i, acc in enumerate(accounts):
-        print(f"\n▶️ 开始处理第 {i+1} 个账户: {acc['username']}")
+        masked_user = mask_email(acc['username'])
+        print(f"\n▶️ 开始处理第 {i+1} 个账户: {masked_user}")
         bot = AutoLogin(acc['username'], acc['password'], index=i+1)
         if bot.run():
             success_count += 1
