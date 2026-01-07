@@ -173,20 +173,20 @@ class LumiProxyStrategy(ProxyStrategy):
         self.name = "LumiProxy (lumiproxy.com)"
 
     def navigate(self, page, target_url):
-        # https://www.lumiproxy.com/zh-hans/online-proxy/proxysite/
-        page.goto("https://www.lumiproxy.com/zh-hans/online-proxy/proxysite/", timeout=60000)
-        
-        # Wait for input
-        # <input type="text" autocomplete="off" placeholder="输入网址" class="el-input__inner">
-        # 注意: 这里的 placeholder "输入网址" 可能需要在中文环境下
-        input_sel = 'input[placeholder="输入网址"]'
-        page.wait_for_selector(input_sel, state='visible', timeout=30000)
-        page.fill(input_sel, target_url)
-        
-        # Click Start button
-        # <div class="btn" ...>开始</div>
-        # 这是一个 div，不是 button，所以用 locator 配合 text 可能会比较稳
-        page.click('.btn:has-text("开始")')
+        # https://webproxy.lumiproxy.com/request?area=US&u=...
+        base = "https://webproxy.lumiproxy.com/request?area=US&u="
+        final_url = f"{base}{urllib.parse.quote(target_url)}"
+        page.goto(final_url, timeout=60000)
+
+class ProxyCCStrategy(ProxyStrategy):
+    def __init__(self):
+        self.name = "ProxyCC (proxy.cc)"
+
+    def navigate(self, page, target_url):
+        # https://webproxy.proxy.cc/request?area=US&u=...
+        base = "https://webproxy.proxy.cc/request?area=US&u="
+        final_url = f"{base}{urllib.parse.quote(target_url)}"
+        page.goto(final_url, timeout=60000)
 
 class DirectStrategy(ProxyStrategy):
     def __init__(self):
@@ -277,7 +277,8 @@ class AutoLogin:
             CroxyProxyStrategy(),
             SiteProxyStrategy(),
             NSocksStrategy(),
-            LumiProxyStrategy()
+            LumiProxyStrategy(),
+            ProxyCCStrategy()
         ]
         # 随机打乱代理顺序
         random.shuffle(proxy_strategies)
