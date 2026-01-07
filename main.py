@@ -156,8 +156,8 @@ class NSocksStrategy(ProxyStrategy):
         self.name = "NSocks (nsocks.com)"
 
     def navigate(self, page, target_url):
-        # https://www.nsocks.com/
-        page.goto("https://www.nsocks.com/", timeout=60000)
+        # https://www.nsocks.com/zh/proxysite/
+        page.goto("https://www.nsocks.com/zh/proxysite/", timeout=60000)
         
         # Wait for input
         # Placeholder: "请输入网址"
@@ -173,8 +173,8 @@ class LumiProxyStrategy(ProxyStrategy):
         self.name = "LumiProxy (lumiproxy.com)"
 
     def navigate(self, page, target_url):
-        # https://www.lumiproxy.com/
-        page.goto("https://www.lumiproxy.com/", timeout=60000)
+        # https://www.lumiproxy.com/zh-hans/online-proxy/proxysite/
+        page.goto("https://www.lumiproxy.com/zh-hans/online-proxy/proxysite/", timeout=60000)
         
         # Wait for input
         # <input type="text" autocomplete="off" placeholder="输入网址" class="el-input__inner">
