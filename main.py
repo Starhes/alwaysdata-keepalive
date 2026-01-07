@@ -4,6 +4,8 @@ AlwaysData 自动登录脚本
 - 支持多账户 (ACCOUNTS_JSON)
 - 邮箱密码登录
 - Telegram 通知
+- 支持多种在线代理 (AProxy, BestProxy, CroxyProxy, SiteProxy, NSocks, LumiProxy)
+- 自动回退机制 (如果所有代理失败，尝试直连)
 """
 
 import os
@@ -11,11 +13,13 @@ import sys
 import time
 import json
 import requests
+import urllib.parse
+import random
 from playwright.sync_api import sync_playwright
 
 # ==================== 配置 ====================
 ALWAYS_DATA_URL = "https://admin.alwaysdata.com"
-LOGIN_URL = f"{ALWAYS_DATA_URL}/login/"
+TARGET_URL = f"{ALWAYS_DATA_URL}/login/"
 
 
 class Telegram:
@@ -81,6 +85,117 @@ def mask_email(email):
         return email
 
 
+# ==================== 代理策略 ====================
+
+class ProxyStrategy:
+    def navigate(self, page, target_url):
+        raise NotImplementedError
+
+class AProxyStrategy(ProxyStrategy):
+    def __init__(self):
+        self.name = "AProxy (aproxy.com)"
+
+    def navigate(self, page, target_url):
+        # https://aproxy.com/zh/proxysite/
+        # 直接构造 webproxy URL
+        base = "https://webproxy.aproxy.com/request?area=US&u="
+        final_url = f"{base}{urllib.parse.quote(target_url)}"
+        page.goto(final_url, timeout=60000)
+
+class BestProxyStrategy(ProxyStrategy):
+    def __init__(self):
+        self.name = "BestProxy (bestproxy.com)"
+
+    def navigate(self, page, target_url):
+        # https://bestproxy.com/
+        page.goto("https://bestproxy.com/", timeout=60000)
+        # 等待输入框出现
+        # <input class="m-input__inner" ...>
+        page.wait_for_selector('.m-input__inner', state='visible', timeout=30000)
+        
+        page.fill('.m-input__inner', target_url)
+        
+        # 点击GO
+        # <button class="m-button ...">GO</button>
+        page.click('.m-button')
+
+class CroxyProxyStrategy(ProxyStrategy):
+    def __init__(self):
+        self.name = "CroxyProxy (croxyproxy.com)"
+
+    def navigate(self, page, target_url):
+        # https://www.croxyproxy.com/
+        page.goto("https://www.croxyproxy.com/", timeout=60000)
+        # 等待输入框出现
+        # <input id="url" ...>
+        page.wait_for_selector('#url', state='visible', timeout=30000)
+        
+        page.fill('#url', target_url)
+        
+        # 点击GO
+        # <button id="requestSubmit" ...>
+        page.click('#requestSubmit')
+
+class SiteProxyStrategy(ProxyStrategy):
+    def __init__(self):
+        self.name = "SiteProxy (siteproxy.ai)"
+
+    def navigate(self, page, target_url):
+        # https://siteproxy.ai/
+        page.goto("https://siteproxy.ai/", timeout=60000)
+        # Wait for input
+        # <input id="url-input" ...>
+        page.wait_for_selector('#url-input', state='visible', timeout=30000)
+        page.fill('#url-input', target_url)
+        
+        # Click button "开启代理"
+        page.click('button:has-text("开启代理")')
+
+class NSocksStrategy(ProxyStrategy):
+    def __init__(self):
+        self.name = "NSocks (nsocks.com)"
+
+    def navigate(self, page, target_url):
+        # https://www.nsocks.com/
+        page.goto("https://www.nsocks.com/", timeout=60000)
+        
+        # Wait for input
+        # Placeholder: "请输入网址"
+        input_sel = 'input[placeholder="请输入网址"]'
+        page.wait_for_selector(input_sel, state='visible', timeout=30000)
+        page.fill(input_sel, target_url)
+        
+        # Click GO button
+        page.click('button:has-text("GO")')
+
+class LumiProxyStrategy(ProxyStrategy):
+    def __init__(self):
+        self.name = "LumiProxy (lumiproxy.com)"
+
+    def navigate(self, page, target_url):
+        # https://www.lumiproxy.com/
+        page.goto("https://www.lumiproxy.com/", timeout=60000)
+        
+        # Wait for input
+        # <input type="text" autocomplete="off" placeholder="输入网址" class="el-input__inner">
+        # 注意: 这里的 placeholder "输入网址" 可能需要在中文环境下
+        input_sel = 'input[placeholder="输入网址"]'
+        page.wait_for_selector(input_sel, state='visible', timeout=30000)
+        page.fill(input_sel, target_url)
+        
+        # Click Start button
+        # <div class="btn" ...>开始</div>
+        # 这是一个 div，不是 button，所以用 locator 配合 text 可能会比较稳
+        page.click('.btn:has-text("开始")')
+
+class DirectStrategy(ProxyStrategy):
+    def __init__(self):
+        self.name = "Direct (No Proxy)"
+
+    def navigate(self, page, target_url):
+        page.goto(target_url, timeout=60000)
+
+
 class AutoLogin:
     """自动登录"""
     
@@ -136,7 +251,7 @@ class AutoLogin:
         if err:
             msg += f"\n<b>错误:</b> {err}"
         
-        msg += "\n\n<b>日志:</b>\n" + "\n".join(self.logs[-6:])
+        msg += "\n\n<b>日志:</b>\n" + "\n".join(self.logs[-8:])
         
         self.tg.send(msg)
         
@@ -155,24 +270,86 @@ class AutoLogin:
             self.notify(False, "凭据未配置")
             return False
         
+        # 代理策略列表
+        proxy_strategies = [
+            AProxyStrategy(), 
+            BestProxyStrategy(), 
+            CroxyProxyStrategy(),
+            SiteProxyStrategy(),
+            NSocksStrategy(),
+            LumiProxyStrategy()
+        ]
+        # 随机打乱代理顺序
+        random.shuffle(proxy_strategies)
+        
+        # 最后添加直连策略 (fallback)
+        strategies = proxy_strategies + [DirectStrategy()]
+        
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, args=['--no-sandbox'])
             context = browser.new_context(
                 viewport={'width': 1920, 'height': 1080},
                 user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             )
+            # 每次 run 都是新的 context 和 page
             page = context.new_page()
             
             try:
-                # 1. 访问 AlwaysData 登录页
-                self.log("步骤1: 打开 AlwaysData", "STEP")
-                page.goto(LOGIN_URL, timeout=60000)
-                page.wait_for_load_state('networkidle', timeout=30000)
-                time.sleep(2)
-                self.shot(page, "login_page")
+                # 1. 尝试通过各种策略加载页面
+                login_page_loaded = False
                 
+                for strategy in strategies:
+                    self.log(f"尝试连接: {strategy.name}", "STEP")
+                    try:
+                        strategy.navigate(page, TARGET_URL)
+                        
+                        # 等待页面加载
+                        if isinstance(strategy, DirectStrategy):
+                            page.wait_for_load_state('networkidle', timeout=30000)
+                        else:
+                            # 代理通常更慢，且可能有跳转
+                            time.sleep(8) 
+                            try:
+                                page.wait_for_load_state('networkidle', timeout=45000)
+                            except:
+                                pass
+                        
+                        # 检查是否加载成功 (出现登录框 或 已登录)
+                        # 1. 登录框
+                        has_login_input = False
+                        if page.locator('input[name="password"]').count() > 0 or \
+                           page.locator('#id_password').count() > 0 or \
+                           page.locator('input[type="password"]').count() > 0:
+                            has_login_input = True
+                            
+                        # 2. 已登录标志
+                        is_logged_in = False
+                        if page.get_by_text("Administration").count() > 0 or \
+                           page.get_by_text("Logout").count() > 0 or \
+                           page.get_by_text("Se déconnecter").count() > 0: # 法语 Logout
+                            is_logged_in = True
+                            
+                        if has_login_input or is_logged_in:
+                            self.log(f"策略 {strategy.name} 连接成功", "SUCCESS")
+                            login_page_loaded = True
+                            self.shot(page, f"ok_{strategy.name.split()[0]}")
+                            break
+                        else:
+                            self.log(f"策略 {strategy.name} 未能加载目标页面", "WARN")
+                            self.shot(page, f"fail_{strategy.name.split()[0]}")
+                            
+                    except Exception as e:
+                        self.log(f"策略 {strategy.name} 异常: {str(e)[:100]}", "WARN")
+                
+                if not login_page_loaded:
+                    self.log("所有策略(含直连)均失败，终止", "ERROR")
+                    self.notify(False, "所有连接方式均失败")
+                    return False
+
                 # 检查是否已经登录
-                if 'login' not in page.url:
+                if page.get_by_text("Administration").count() > 0 or \
+                   page.get_by_text("Logout").count() > 0 or \
+                   page.get_by_text("Se déconnecter").count() > 0:
                     self.log("已登录！", "SUCCESS")
                     self.keepalive(page)
                     self.notify(True)
@@ -181,6 +358,7 @@ class AutoLogin:
                 # 2. 输入账号密码
                 self.log("步骤2: 输入凭据", "STEP")
                 try:
+                    # 总是重新检测元素，因为 DOM 可能变化
                     username_selectors = ['input[name="email"]', 'input[name="username"]', 'input[type="email"]', '#id_email']
                     password_selectors = ['input[name="password"]', 'input[type="password"]', '#id_password']
                     
@@ -191,7 +369,7 @@ class AutoLogin:
                             break
                     
                     if not user_input:
-                        self.log("未找到明显的用户名输入框，尝试默认 input[name='email']", "WARN")
+                        # 盲试
                         user_input = 'input[name="email"]'
 
                     page.fill(user_input, self.username)
@@ -208,8 +386,9 @@ class AutoLogin:
                     page.fill(pass_input, self.password)
                     self.log("已输入凭据")
                 except Exception as e:
-                    self.log(f"输入失败: {e}", "ERROR")
-                    self.notify(False, f"输入失败: {e}")
+                    self.log(f"输入失败: {str(e)[:100]}", "ERROR")
+                    self.shot(page, "input_fail")
+                    self.notify(False, f"输入失败")
                     return False
                 
                 self.shot(page, "filled")
@@ -217,39 +396,45 @@ class AutoLogin:
                 # 3. 提交登录
                 self.log("步骤3: 提交登录", "STEP")
                 try:
-                    page.click('button[type="submit"], input[type="submit"]')
+                    # 尝试点击登录按钮
+                    # 有些代理可能会注入额外的 button，所以要精确
+                    # AlwaysData 的登录按钮通常是 type="submit"
+                    submit_btn = page.locator('button[type="submit"], input[type="submit"]').last
+                    if submit_btn.is_visible():
+                        submit_btn.click()
+                    else:
+                        page.keyboard.press('Enter')
                 except Exception as e:
-                    self.log(f"点击登录失败: {e}", "ERROR")
+                    self.log(f"点击登录失败: {e}", "WARN")
                     page.keyboard.press('Enter')
                 
                 # 等待跳转
+                time.sleep(5)
+                # 尝试等待网络空闲，但不强求，因为代理环境可能一直有心跳包
                 try:
-                    page.wait_for_url(lambda u: 'login' not in u, timeout=30000)
-                    page.wait_for_load_state('networkidle', timeout=30000)
+                    page.wait_for_load_state('networkidle', timeout=15000)
                 except:
-                    self.log("登录超时或失败", "ERROR")
-                    self.shot(page, "login_fail")
-                    
-                    try:
-                        err = page.locator('.alert-danger, .error').first
-                        if err.is_visible():
-                            self.log(f"登录错误: {err.inner_text()}", "ERROR")
-                    except:
-                        pass
-                        
-                    self.notify(False, "登录超时或失败")
-                    return False
+                    pass
 
-                self.shot(page, "login_success")
+                self.shot(page, "after_submit")
                 
                 # 4. 验证登录成功
                 self.log("步骤4: 验证登录", "STEP")
-                if 'login' in page.url:
+                
+                # 再次检查是否有密码框
+                if page.locator('input[name="password"]').count() > 0:
                      self.log("仍在登录页，可能失败", "ERROR")
+                     # 尝试获取错误信息
+                     try:
+                        err = page.locator('.alert-danger, .error').first
+                        if err.is_visible():
+                            self.log(f"登录错误: {err.inner_text()}", "ERROR")
+                     except:
+                        pass
                      self.notify(False, "登录失败")
                      return False
                 
-                self.log("登录成功！", "SUCCESS")
+                self.log("登录成功！(猜测)", "SUCCESS")
 
                 # 5. 保活
                 self.keepalive(page)
@@ -258,11 +443,11 @@ class AutoLogin:
                 return True
                 
             except Exception as e:
-                self.log(f"异常: {e}", "ERROR")
-                self.shot(page, "异常")
+                self.log(f"运行异常: {e}", "ERROR")
+                self.shot(page, "exception")
                 import traceback
                 traceback.print_exc()
-                self.notify(False, str(e))
+                self.notify(False, f"运行异常: {str(e)[:100]}")
                 return False
             finally:
                 browser.close()
@@ -300,7 +485,7 @@ def get_accounts():
 
 if __name__ == "__main__":
     print("\n" + "="*50)
-    print("🚀 AlwaysData 自动登录 (多账户版)")
+    print("🚀 AlwaysData 自动登录 (Proxy Redundancy)")
     print("="*50 + "\n")
     
     accounts = get_accounts()
@@ -321,6 +506,8 @@ if __name__ == "__main__":
         bot = AutoLogin(acc['username'], acc['password'], index=i+1)
         if bot.run():
             success_count += 1
+            # 成功后随机等待，增加拟人化
+            time.sleep(random.randint(5, 15))
         else:
             fail_count += 1
             
