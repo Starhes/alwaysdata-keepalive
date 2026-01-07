@@ -108,7 +108,7 @@ class BestProxyStrategy(ProxyStrategy):
 
     def navigate(self, page, target_url):
         # https://bestproxy.com/
-        page.goto("https://bestproxy.com/", timeout=60000)
+        page.goto("https://bestproxy.com/zh/proxy-site/", timeout=60000)
         # 等待输入框出现
         # <input class="m-input__inner" ...>
         page.wait_for_selector('.m-input__inner', state='visible', timeout=30000)
@@ -136,37 +136,15 @@ class CroxyProxyStrategy(ProxyStrategy):
         # <button id="requestSubmit" ...>
         page.click('#requestSubmit')
 
-class SiteProxyStrategy(ProxyStrategy):
-    def __init__(self):
-        self.name = "SiteProxy (siteproxy.ai)"
-
-    def navigate(self, page, target_url):
-        # https://siteproxy.ai/zh-Hans
-        page.goto("https://siteproxy.ai/zh-Hans", timeout=60000)
-        # Wait for input
-        # <input id="url-input" ...>
-        page.wait_for_selector('#url-input', state='visible', timeout=30000)
-        page.fill('#url-input', target_url)
-        
-        # Click button "开启代理"
-        page.click('button:has-text("开启代理")')
-
 class NSocksStrategy(ProxyStrategy):
     def __init__(self):
         self.name = "NSocks (nsocks.com)"
 
     def navigate(self, page, target_url):
-        # https://www.nsocks.com/zh/proxysite/
-        page.goto("https://www.nsocks.com/zh/proxysite/", timeout=60000)
-        
-        # Wait for input
-        # Placeholder: "请输入网址"
-        input_sel = 'input[placeholder="请输入网址"]'
-        page.wait_for_selector(input_sel, state='visible', timeout=30000)
-        page.fill(input_sel, target_url)
-        
-        # Click GO button
-        page.click('button:has-text("GO")')
+        # https://webproxy.nsocks.com/request?area=US&u=...
+        base = "https://webproxy.nsocks.com/request?area=US&u="
+        final_url = f"{base}{urllib.parse.quote(target_url)}"
+        page.goto(final_url, timeout=60000)
 
 class LumiProxyStrategy(ProxyStrategy):
     def __init__(self):
@@ -275,7 +253,6 @@ class AutoLogin:
             AProxyStrategy(), 
             BestProxyStrategy(), 
             CroxyProxyStrategy(),
-            SiteProxyStrategy(),
             NSocksStrategy(),
             LumiProxyStrategy(),
             ProxyCCStrategy()
