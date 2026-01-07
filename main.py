@@ -141,8 +141,8 @@ class SiteProxyStrategy(ProxyStrategy):
         self.name = "SiteProxy (siteproxy.ai)"
 
     def navigate(self, page, target_url):
-        # https://siteproxy.ai/
-        page.goto("https://siteproxy.ai/", timeout=60000)
+        # https://siteproxy.ai/zh-Hans
+        page.goto("https://siteproxy.ai/zh-Hans", timeout=60000)
         # Wait for input
         # <input id="url-input" ...>
         page.wait_for_selector('#url-input', state='visible', timeout=30000)
